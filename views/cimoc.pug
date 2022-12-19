@@ -1,0 +1,27 @@
+doctype html
+html(lang='en')
+ head
+  title cimoc#{cimocnum}
+  link(rel='stylesheet', href='/static/style.css')
+  meta(name='twitter:card', content='summary_large_image')
+  meta(name='og:title', content='cimoc'+cimocnum)
+  meta(name='twitter:title', content='cimoc'+cimocnum)
+  meta(name='og:description', content=caption)
+  meta(name='twitter:description', content=caption)
+  meta(name='og:image', content='https://otesunki.herokuapp.com/static/'+imgs[0])
+  meta(name='twitter:image', content='https://otesunki.herokuapp.com/static/'+imgs[0])
+  meta(name='twitter:site', content='otesunki.herokuapp.com')
+  meta(name='twitter:creator', content='@bloodtree_chris')
+ body
+  a(href=tweet)
+    pre
+     | [
+     time #{date}
+     | ]
+     if caption
+       |
+       | #{caption}
+     else
+  div
+   for pic in imgs
+    img(src='https://otesunki.herokuapp.com/static/'+pic)

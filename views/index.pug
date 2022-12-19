@@ -1,0 +1,24 @@
+doctype html
+html(lang='en')
+ head
+  title comic#{comicnum}
+  link(rel='stylesheet', href='/static/indexstyle.css')
+ body
+  div
+   pre otesunki general archive
+  a(href='/static/lisp.html')
+   pre asd
+  div
+   pre otesunki comic? archive
+  ul
+   each comicnum in comicnums
+    li
+     a(href='/comic/'+comicnum)
+      pre comic#{comicnum} - #{comics[comicnum].caption.split('\n')[0].slice(0, 30)}...
+  div
+   pre chris comic? archive
+  ul
+   each cimocnum in cimocnums
+    li
+     a(href='/cimoc/'+cimocnum)
+      pre cimoc#{cimocnum} - #{cimocs[cimocnum].caption.split('\n')[0].slice(0, 30)}...

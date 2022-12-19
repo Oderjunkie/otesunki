@@ -1,0 +1,26 @@
+doctype html
+html(lang='en')
+ head
+  title comic#{comicnum}
+  link(rel='stylesheet', href='/static/style.css')
+  meta(name='twitter:card', content='summary_large_image')
+  meta(name='og:title', content='comic'+comicnum)
+  meta(name='twitter:title', content='comic'+comicnum)
+  meta(name='og:description', content=caption)
+  meta(name='twitter:description', content=caption)
+  meta(name='og:image', content='https://otesunki.herokuapp.com/static/'+imgs[0])
+  meta(name='twitter:image', content='https://otesunki.herokuapp.com/static/'+imgs[0])
+  meta(name='twitter:site', content='otesunki.herokuapp.com')
+  meta(name='twitter:creator', content='@oderjunks')
+ body
+  pre
+   | [
+   time #{date}
+   | ]
+   if caption
+     |
+     | #{caption}
+   else
+  div
+   for pic in imgs
+    img(src='https://otesunki.herokuapp.com/static/'+pic)
