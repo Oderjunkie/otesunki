@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/xterm/3.14.5/xterm.min.css" integrity="sha512-iLYuqv+v/P4u9erpk+KM83Ioe/l7SEmr7wB6g+Kg1qmEit8EShDKnKtLHlv2QXUp7GGJhmqDI+1PhJYLTsfb8w==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.20.0/min/vs/editor/editor.main.min.css" integrity="sha512-XjO5XYWl8u7tYF3CItEHgoWh8rtQmDeSzPJq4+4PIrbak7TiqeKbWv/4ZwHZ1HAf5dIWHXoguA/jobn2psKZ7w==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+
+body {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  overflow: hidden;
+  display: flex;
+  font-family: monospace;
+}
+
+#container {
+  width: 50%;
+}
+
+#aside {
+  width: 50%;
+  display: flex;
+  flex-direction: column;
+}
+
+#run {
+  text-align: center;
+  display: grid;
+  place-items: center;
+  color: #000;
+  background-color: #3E2;
+  border: outset #3E2 1rem;
+  padding: 1rem;
+  font-size: 3rem;
+  user-select: none;
+}
+
+#output {
+  flex-grow: 1;
+  width: 100%;
+  height: 100%;
+  background-color: #000;
+}
+
+    </style>
+  </head>
+  <body>
+    <div id="container"></div>
+    <div id="aside">
+      <div id="run"><span>Run</span></div>
+      <div id="output"></div>
+    </div>
+    <script>
+
+var require = {
+  paths: {
+    vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.20.0/min/vs"
+  }
+};
+
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/3.14.5/xterm.min.js" integrity="sha512-2PRgAav8Os8vLcOAh1gSaDoNLe1fAyq8/G3QSdyjFFD+OqNjLeHE/8q4+S4MEZgPsuo+itHopj+hJvqS8XUQ8A==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.20.0/min/vs/loader.min.js" integrity="sha512-gWqaPfGsZiCkYB6e5mNN4SMRpEvLGItLBqgOAoyLSKtDxWS2O1YPcOeGTy8d8l00gqc8rVue9ae/ncZqhmfj4g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.20.0/min/vs/editor/editor.main.nls.min.js" integrity="sha512-4XY3/LL6Plkq2tXMnatY+se07ZhwFMkZehD5Z68HrKoSL3BTyLDjwFomhUWixKu8VUw6jWe/8RXT1WtH95lLFg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.20.0/min/vs/editor/editor.main.min.js" integrity="sha512-CK3czr9gLG2z/ygdSM+gNenkN9AShfpW4gMjVyY06VgFHLoc4OCoO92Z8UkcBwVX0ufoYbJw3IVs1mHfXQeI3g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script>
+let on_input = null;
+let input_buffer = '';
+
+class ASDError extends Error {}
+class ASDTypeError extends ASDError {}
+class ASDReferenceError extends ASDError {}
+class ASDSyntaxError extends ASDError {}
+class ASDEOFError extends ASDSyntaxError {}
+
+class Env {
+  #parent
+  #data
+  constructor(parent) {
+    this.#parent = parent;
+    this.#data = {};
+  }
+  set(key, value) {
+    key = key?.asjs?.() ?? key;
+    this.#data[key] = value;
+  }
+  find(key) {
+    key = key?.asjs?.() ?? key;
+    if (key in this.#data) return this;
+    if (this.#parent == null) return null;
+    return this.#parent.find(key);
+  }
+  get(key) {
+    key = key?.asjs?.() ?? key;
+    let env = this.find(key);
+    if (env != null) return env.data[key];
+    throw new ASDReferenceError(`\x1b[37;2m[???:???] \x1b[0;91meval-time: cannot find variable ${typeof key == 'symbol' ? Symbol.keyFor(key) : key}`);
+  }
+  get data() {
+    return this.#data;
+  }
+}
+
+class ASDType {
+  #positions
+  constructor(col, row) {
+    this.#positions = [{col, row}];
+  }
+  async call(callerenv, args) {
+    throw new ASDTypeError(`\x1b[37;2m[${this.row}:${this.col}] \x1b[0;91meval-time: cannot call object`);
+  }
+  async eval(env) {
+    return this;
+  }
+  asjs() {
+    return null;
+  }
+  stringify() {
+    return `<${this.#positions.map(({col, row}) => `${row}:${col}`).join('|')}>`;
+  }
+  relocate(col, row) {
+    this.#positions.unshift({col, row});
+    return this;
+  }
+  get col() {
+    return this.#positions[0].col;
+  }
+  get row() {
+    return this.#positions[0].row;
+  }
+}
+
+class ASDList extends ASDType {
+  #els
+  constructor(col, row, els) {
+    super(col. row);
+    this.#els = els;
+  }
+  async eval(env) {
+    let [car, ...cdr] = this.#els;
+    let out = await car.eval(env);
+    out = await out.call(env, cdr);
+    return out.relocate(this.col, this.row);
+  }
+  asjs() {
+    return this.#els.map(x => x.asjs());
+  }
+  stringify() {
+    return `(${this.#els.map(x => x.stringify()).join(' ')})`;
+  }
+  get els() {
+    return this.#els;
+  }
+}
+
+class ASDFrog extends ASDType {
+  #ident
+  constructor(col, row, ident) {
+    super(col. row);
+    this.#ident = ident;
+  }
+  asjs() {
+    return Symbol.for(this.#ident);
+  }
+  async eval(env) {
+    return env.get(this.asjs());
+  }
+  stringify() {
+    return `${this.#ident}`;
+  }
+  get ident() {
+    return this.#ident;
+  }
+}
+
+class ASDNumber extends ASDType {
+  #val
+  constructor(col, row, val) {
+    super(col. row);
+    this.#val = +val;
+  }
+  asjs() {
+    return this.#val;
+  }
+  async eval(env) {
+    return this;
+  }
+  stringify() {
+    return `${this.#val}`;
+  }
+  get val() {
+    return this.#val;
+  }
+}
+
+class ASDString extends ASDType {
+  #str
+  constructor(col, row, str) {
+    super(col. row);
+    this.#str = str;
+  }
+  async eval(env) {
+    return this;
+  }
+  asjs() {
+    return this.#str;
+  }
+  stringify() {
+    return `"${this.#str.replaceAll('"', '\\"').replaceAll('\n', '\\n')}"`;
+  }
+  get str() {
+    return this.#str;
+  }
+}
+
+class ASDFunction extends ASDType {
+  #argnames
+  #closure
+  #body
+  constructor(col, row, argnames, closure, body) {
+    super(col. row);
+    this.#argnames = argnames;
+    this.#closure = closure;
+    this.#body = body;
+  }
+  async eval(env) {
+    return this;
+  }
+  asjs() {
+    return (...a) => {};
+  }
+  async call(env, args) {
+    let lenv = new Env(this.#closure);
+    for (let i in this.#argnames) {
+      lenv.set(this.#argnames[i].asjs(), await args[i].eval(env));
+    }
+    return await this.#body.eval(lenv);
+  }
+  stringify() {
+    return `(lambda (${this.#argnames.map(x => x.stringify()).join(' ')}) ${this.#body.stringify()})`;
+  }
+}
+
+class ASDInternalFunction extends ASDType {
+  #fn
+  constructor(fn) {
+    super(-1, -1);
+    this.#fn = fn;
+  }
+  async eval(env) {
+    return this;
+  }
+  asjs() {
+    return this.#fn;
+  }
+  async call(env, args) {
+    return aslisp(await this.#fn(...await Promise.all(args.map(arg => arg.eval(env).then(arg => arg.asjs())))));
+  }
+  stringify() {
+    return `<${this.#fn.name}:internal>`;
+  }
+}
+
+class ASDMacro extends ASDType {
+  #argnames
+  #closure
+  #body
+  constructor(col, row, argnames, closure, body) {
+    super(col. row);
+    this.#argnames = argnames;
+    this.#closure = closure;
+    this.#body = body;
+  }
+  async eval(env) {
+    return this;
+  }
+  asjs() {
+    return (...a) => {};
+  }
+  async call(env, args) {
+    let lenv = new Env(this.#closure);
+    for (let i in this.#argnames) {
+      lenv.set(this.#argnames[i].asjs(), args[i]);
+    }
+    let res = await this.#body.eval(lenv);
+    return await res.eval(env);
+  }
+  stringify() {
+    return `(macro (${this.#argnames.map(x => x.stringify()).join(' ')}) ${this.#body.stringify()})`;
+  }
+}
+
+class ASDInternalMacro extends ASDType {
+  #fn
+  constructor(fn) {
+    super(-1, -1);
+    this.#fn = fn;
+  }
+  async eval(env) {
+    return this;
+  }
+  asjs() {
+    return this.#fn;
+  }
+  async call(env, args) {
+    return await this.#fn(env, ...args);
+  }
+  stringify() {
+    return `<${this.#fn.name}:internal-macro>`;
+  }
+}
+
+class ASDQuote extends ASDType {
+  #type
+  constructor(col, row, type) {
+    super(col, row);
+    this.#type = type;
+  }
+  async eval(env) {
+    return this.#type;
+  }
+  asjs() {
+    return this.#type.asjs();
+  }
+  stringify() {
+    return `'${this.#type.stringify()}`;
+  }
+}
+
+function aslisp(val) {
+  if (typeof val === 'number') return new ASDNumber(-1, -1, val);
+  if (typeof val === 'string') return new ASDString(-1, -1, val);
+  if (typeof val === 'symbol') return new ASDFrog(-1, -1, Symbol.keyFor(val));
+  if (typeof val === 'function') return new ASDInternalFunction(val);
+  if (val == null) return new ASDList(-1, -1, []);
+  if (Array.isArray(val)) return new ASDList(-1, -1, val.map(x => aslisp(x)));
+  return new ASDType(-1, -1);
+}
+
+class Reader {
+  #tokens
+  #i
+  constructor(tokens) {
+    this.#tokens = tokens;
+    this.#i = 0;
+  }
+  peek() {
+    if (this.#i >= this.#tokens.length)
+      throw new ASDEOFError(`\x1b[37;2m[${this.#tokens[this.#tokens.length-1]?.row ?? '???'}:${this.#tokens[this.#tokens.length-1]?.col ?? '???'}] \x1b[0;94mparse-time: abrupt EOF`);
+    return this.#tokens[this.#i];
+  }
+  next() {
+    let res = this.peek();
+    this.#i++;
+    return res;
+  }
+  read_frog() {
+    let res;
+    switch (this.peek().type) {
+      case 'identifier': res = new ASDFrog(this.peek().col, this.peek().row, this.peek().content); break;
+      case 'number':     res = new ASDNumber(this.peek().col, this.peek().row, this.peek().content); break;
+      case 'string':     res = new ASDString(this.peek().col, this.peek().row, this.peek().content.slice(1, -1).replaceAll('\\n', '\n').replaceAll('\\\\', '\\')); break;
+      default:           throw  new ASDSyntaxError(`\x1b[37;2m[${this.peek().row}:${this.peek().col}] \x1b[0;94mparse-time: identifier/number/string expected got ${this.peek().type} \`${this.peek().content}\``);
+    }
+    this.next();
+    return res;
+  }
+  read_list() {
+    if (this.peek().type != 'special' || this.peek().content != '(')
+      throw new ASDSyntaxError(`\x1b[37;2m[${this.peek().row}:${this.peek().col}] \x1b[0;94mparse-time: special \`(\` expected got ${this.peek().type} \`${this.peek().content}\``);
+    let orig = this.next();
+    let out = [];
+    while (this.peek().type != 'special' || this.peek().content != ')')
+      out.push(this.read_form());
+    this.next();
+    return new ASDList(orig.col, orig.row, out);
+  }
+  read_form(top = false) {
+    let _ = () => {
+      switch (this.peek().type) {
+        case 'special':
+          if (this.peek().content == '(') return this.read_list();
+          if (this.peek().content == '\'') {
+            let location = this.next();
+            return new ASDQuote(location.col, location.row, this.read_form());
+          }
+        default:        return this.read_frog();
+      }
+    }
+    
+    if (!top) return _();
+    let res = _();
+    
+    try {
+      this.peek();
+    } catch (e) {
+      if (!(e instanceof ASDError)) throw e;
+      return res;
+    }
+    
+    throw new ASDSyntaxError(`\x1b[37;2m[${this.peek().row}:${this.peek().col}] \x1b[0;94mparse-time: program actually ends here? maybe you forgot a \`do\`.`);
+  }
+}
+
+function count(string, char) {
+  let j = 0;
+  for (let i = 0; i < string.length; i++)
+    if (string[i] == char)
+      j++;
+  return j;
+}
+
+function tokenize(code) {
+  let tokens = [];
+  let left = code;
+  let spliced = code.split('\n');
+  let errors = [];
+  let match;
+  function get_location() {
+    let left_line = left.split('\n', 1)[0];
+    let line_no = spliced.length - count(left, '\n');
+    let col_no = spliced[line_no - 1].length - left_line.length + 1;
+    return {row: line_no, col: col_no};
+  }
+  loop: while (left.length > 0) {
+    let location = get_location();
+    if ((match = left.match(/^\s+/)?.[0]) != null) {
+      left = left.slice(match.length);
+      continue loop;
+    }
+    if ((match = left.match(/^;.*/)?.[0]) != null) {
+      left = left.slice(match.length);
+      continue loop;
+    }
+    if ((match = left.match(/^"([^"]|\\.)*"/)?.[0]) != null) {
+      left = left.slice(match.length);
+      tokens.push({
+        type: 'string',
+        content: match,
+        col: location.col,
+        row: location.row,
+      });
+      if (left.match(/^(\s+|[)\]}])/) == null)
+        errors.push({
+          col: location.col,
+          row: location.row,
+          msg: `i think you forgot to add a space before \`${left.split('\n')[0]}\`?`,
+        });
+      continue loop;
+    }
+    if ((match = left.match(/^\d+(\.\d*)?|\.\d+/)?.[0]) != null) {
+      left = left.slice(match.length);
+      tokens.push({
+        type: 'number',
+        content: match,
+        col: location.col,
+        row: location.row,
+      });
+      if (left.match(/^(\s+|[)\]}])/) == null)
+        errors.push({
+          col: location.col,
+          row: location.row,
+          msg: `i think you forgot to add a space before \`${left.split('\n')[0]}\`?`,
+        });
+      continue loop;
+    }
+    if ((match = left.match(/^[()\[\]{}']/)?.[0]) != null) {
+      left = left.slice(match.length);
+      tokens.push({
+        type: 'special',
+        content: match,
+        col: location.col,
+        row: location.row,
+      });
+      continue loop;
+    }
+    if ((match = left.match(/^[^()\[\]{}'";\s]+/)?.[0]) != null) {
+      left = left.slice(match.length);
+      tokens.push({
+        type: 'identifier',
+        content: match,
+        col: location.col,
+        row: location.row,
+      });
+      continue loop;
+    }
+    errors.push({
+      col: location.col,
+      row: location.row,
+      msg: `unknown token at \`${left.split('\n')[0]}\``,
+    });
+    left = left.slice(1);
+  }
+  return [tokens, errors];
+}
+
+function main() {
+  
+  let container = document.getElementById("container");
+  let output = document.getElementById("output");
+  let run = document.getElementById("run");
+  
+  monaco.languages.register({ id: "asd" });
+  
+  monaco.languages.setMonarchTokensProvider("asd", {
+    tokenizer: {
+      root: [
+        [/;.*/, 'comment'],
+        [/'/, 'operators'],
+        [/"([^"]|\\.)*"/, 'string'],
+        [/\d+(\.\d*)?|\.\d+/, 'constant'],
+        [/[^()\[\]{}';\s]+/, 'identifier'],
+      ],
+    }
+  });
+  
+  let editor = monaco.editor.create(container, {
+    value: ';                                      ;\n;      :::.     .::::::.:::::::-.      ;\n;      ;;`;;   ;;;`    ` ;;,   `\';,    ;\n;     ,[[ \'[[, \'[==/[[[[,`[[     [[    ;\n;    c$$$cc$$$c  \'\'\'    $ $$,    $$    ;\n;     888   888,88b    dP 888_,o8P\'    ;\n;     YMM   ""`  "YMmMY"  MMMMP"`      ;\n;                                      ;\n; ----[[ LISP, otesunki edition ]]---- ;\n;                                      ;\n; ------=== standard library ===------ ;\n;                + - * /               ;\n;             > >= = <= < ?            ;\n;             car cdr cons             ;\n;          do set print input          ;\n;        eval quote lambda macro       ;\n;                                      ;\n; macro just acts like lambda, except  ;\n;   it treats its arguments as data    ;\n;           instead of code            ;\n\n(print                    "Hello, ASD!")',
+    language: 'asd',
+    theme: 'vs-dark'
+  });
+  
+  let output_term = new Terminal({ convertEol: true });
+  output_term.open(output);
+  
+  window.onresize = () => {
+    editor.layout();
+  };
+  
+  run.onmousedown =  () => {
+    run.style.borderStyle = 'inset';
+  };
+  
+  run.onmouseup = () => {
+    run.style.borderStyle = 'outset';
+  };
+  
+  run.onclick = async () => {
+    output_term.write(`\x1b[2J\x1b[;H`);
+    let [tokens, lexerrs] = tokenize(editor.getValue());
+    if (lexerrs.length > 0) {
+      for (let err of lexerrs)
+        output_term.write(`\x1b[37;2m[${err.row}:${err.col}] \x1b[0;93mlex-time: ${err.msg}\n`);
+      return;
+    }
+    
+    let reader = new Reader(tokens);
+    let ast;
+
+    try {
+      ast = reader.read_form(true);
+    } catch (e) {
+      if (!(e instanceof ASDError)) throw e;
+      output_term.write(`${e.message}`);
+      return;
+    }
+    
+    let env = new Env(null);
+    env.set(new ASDFrog(-1, -1, '+' ).asjs(), new ASDInternalFunction(async (...args) => args.reduce((x, y) => x + y)));
+    env.set(new ASDFrog(-1, -1, '-' ).asjs(), new ASDInternalFunction(async (...args) => args.reduce((x, y) => x - y)));
+    env.set(new ASDFrog(-1, -1, '*' ).asjs(), new ASDInternalFunction(async (...args) => args.reduce((x, y) => x * y)));
+    env.set(new ASDFrog(-1, -1, '/' ).asjs(), new ASDInternalFunction(async (...args) => args.reduce((x, y) => x / y)));
+    env.set(new ASDFrog(-1, -1, '>' ).asjs(), new ASDInternalFunction(async (x, y) => x >  y ? 1 : 0));
+    env.set(new ASDFrog(-1, -1, '>=').asjs(), new ASDInternalFunction(async (x, y) => x >= y ? 1 : 0));
+    env.set(new ASDFrog(-1, -1, '=' ).asjs(), new ASDInternalFunction(async (x, y) => (x == y || Array.isArray(x) && Array.isArray(y) && x.length == 0 && y.length == 0) ? 1 : 0));
+    env.set(new ASDFrog(-1, -1, '<=').asjs(), new ASDInternalFunction(async (x, y) => x <= y ? 1 : 0));
+    env.set(new ASDFrog(-1, -1, '<' ).asjs(), new ASDInternalFunction(async (x, y) => x <  y ? 1 : 0));
+    env.set(new ASDFrog(-1, -1, '?' ).asjs(), new ASDInternalMacro(async (env, cond, ifso, ifnot) => {
+      cond = await cond.eval(env);
+      if (cond instanceof ASDNumber && cond.val != 0)
+        return await ifso.eval(env);
+      return await ifnot.eval(env);
+    }));
+    env.set(new ASDFrog(-1, -1, 'car').asjs(), new ASDInternalFunction(async (list) => {
+      if (list.els.length == 0) return list;
+      return list.els[0];
+    }));
+    env.set(new ASDFrog(-1, -1, 'cdr').asjs(), new ASDInternalFunction(async (list) => {
+      if (list.els.length == 0) return list;
+      return new ASDList(list.col, list.row, list.els.slice(1));
+    }));
+    env.set(new ASDFrog(-1, -1, 'cons').asjs(), new ASDInternalFunction(async (car, cdr) => {
+      return new ASDList(cdr.col, cdr.row, [car].concat(cdr.els));
+    }));
+    env.set(new ASDFrog(-1, -1, 'do').asjs(), new ASDInternalMacro(async (env, ...actions) => {
+      let res = new ASDList(-1, -1, []);
+      for (let action of actions)
+        res = await action.eval(env);
+      return res;
+    }));
+    env.set(new ASDFrog(-1, -1, 'set').asjs(), new ASDInternalMacro(async (env, name, value) => {
+      value = await value.eval(env);
+      env.set(name.asjs(), value);
+      return value;
+    }));
+    env.set(new ASDFrog(-1, -1, 'print' ).asjs(), new ASDInternalMacro(async (env, ...args) => {
+      args = await Promise.all(args.map(arg => arg.eval(env)));
+      function fmt(arg) {
+        console.log(arg, arg.stringify());
+        if (arg instanceof ASDString) return arg.str;
+        return arg.stringify();
+      }
+      for (let arg of args)
+        output_term.write(fmt(arg));
+      return new ASDList(-1, -1, []);
+    }));
+    env.set(new ASDFrog(-1, -1, 'input' ).asjs(), new ASDInternalFunction((...args) => {
+      for (let arg of args)
+        output_term.write(arg);
+      return new Promise((resolve, reject) => {
+        input_buffer = '';
+        on_input = resolve;
+      });
+    }));
+    env.set(new ASDFrog(-1, -1, 'eval').asjs(), new ASDInternalMacro(async (env1, expr, env2) => {
+      let env = env2 ?? env1;
+      let expr_ = await expr.eval(env1)
+      return await expr_.eval(env);
+    }));
+    env.set(new ASDFrog(-1, -1, 'quote').asjs(), new ASDInternalMacro(async (env, expr) => {
+      return new ASDQuote(-1, -1, expr);
+    }));
+    env.set(new ASDFrog(-1, -1, 'lambda').asjs(), new ASDInternalMacro(async (env, args, body) => {
+      return new ASDFunction(-1, -1, args.els, env, body);
+    }));
+    env.set(new ASDFrog(-1, -1, 'macro').asjs(), new ASDInternalMacro(async (env, args, body) => {
+      return new ASDMacro(-1, -1, args.els, env, body);
+    }));
+    
+    let out;
+    try {
+      out = await ast.eval(env);
+    } catch (e) {
+      if (!(e instanceof ASDError)) throw e;
+      output_term.write(`${e.message}`);
+      return;
+    }
+    
+    output_term.write(`\x1b[97m\n\n${out.stringify()}`);
+  };
+  
+  output_term.on('key', (key, ev) => {
+    if (on_input != null) {
+      if (key.charCodeAt(0) == 13) {
+        output_term.write('\n');
+        let A = on_input;
+        let B = input_buffer;
+        on_input = null;
+        input_buffer = '';
+        A(B);
+        return;
+      }
+      output_term.write(key);
+      input_buffer += key;
+    }
+  });
+}
+
+function att() {
+  if (window.monaco == null)
+    return setTimeout(att, 100);
+  main();
+}
+
+att();
+
+    </script>
+  </body>
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <style>
+
+body {
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+    </style>
+  </head>
+  <body>
+    <script>
+
+async function main() {
+  document.body.style.margin = '0';
+  document.body.style.width = '100vw';
+  document.body.style.height = '100vh';
+  let pain = 64;
+  let scale = 4;
+
+  try {
+    let video = await navigator.mediaDevices.getDisplayMedia({video: true});
+    let screen = document.createElement('video');
+    screen.srcObject = video;
+
+    screen.addEventListener('loadeddata', async () => {
+      let width = screen.videoWidth;
+      let height = screen.videoHeight;
+      let shot = document.createElement('canvas');
+      let shot_context = shot.getContext('2d');
+      shot.width = (width / scale)|0;
+      shot.height = (height / scale)|0;
+      await screen.play();
+      setInterval(async () => {
+        let red = (Math.random() * pain) | 0;
+        let grn = (Math.random() * pain) | 0;
+        let blu = (Math.random() * pain) | 0;
+        document.body.style.backgroundColor = `rgb(${red}, ${grn}, ${blu}`;
+        setTimeout(async () => {
+          shot_context.drawImage(screen, 0, 0, width, height, 0, 0, shot.width, shot.height);
+          let now = shot_context.getImageData(0, 0, shot.width, shot.height);
+          let page = 0;
+          let end = now.width * now.height * 4;
+          for (let i = 0; i < end; i += 4) {
+            if (Math.abs(now.data[i]     - red) <= 10 &&
+                Math.abs(now.data[i + 1] - grn) <= 10 &&
+                Math.abs(now.data[i + 2] - blu) <= 10)
+              page++;
+          }
+          console.log(page / (now.width * now.height) * 100);
+        }, 100);
+      }, 500);
+    });
+  } catch(err) {
+    console.error("Error: " + err);
+    return;
+  }
+}
+
+document.body.addEventListener('click', function f() {
+  main();
+  document.body.removeEventListener('click', f);
+});
+
+    </script>
+  </body>
+</html>

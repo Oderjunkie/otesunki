@@ -1,0 +1,47 @@
+body {
+    width: 100%;
+    left: 0;
+    top: 0;
+    margin: 0;
+    padding: 0;
+    background-color: #112;
+    color: #FFE;
+    font-size: 1.5rem;
+}
+
+ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+pre {
+    margin: 0;
+    display: inline;
+}
+
+body div {
+    display: flex;
+    flex-direction: row;
+    margin-bottom: 1rem;
+    font-size: 2rem;
+}
+
+body div:before, body div:after {
+    content: "";
+    flex: 1 1;
+    border-bottom: 1px solid;
+    margin: auto;
+}
+
+body div:before {
+    margin-right: 10px;
+}
+
+body div:after {
+    margin-left: 10px;
+}
+
+a {
+    text-decoration: inherit;
+}
